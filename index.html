@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Service Desk Cockpit - GLPI Realtime</title>
+  
+  <!-- Estilos Separados -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- SDKs do Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+  <!-- GATE DE ACESSO -->
+  <div id="gate-acesso">
+    <div class="gate-card">
+      <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🔒 Autenticação Cockpit</h3>
+      <p style="color: #64748b; font-size: 12.5px; margin-bottom: 12px;">Entre com sua credencial de operador</p>
+      
+      <input type="email" id="auth-email" placeholder="operador@empresa.com" />
+      <input type="password" id="auth-senha" placeholder="••••••••" />
+      
+      <button id="btn-login-auth" onclick="realizarLogin()">Entrar</button>
+      <button id="btn-login-anon" style="background: #64748b; margin-top: 6px;" onclick="entrarAnonimo()">Acessar como Visualizador</button>
+      
+      <p id="msg-erro" style="color: #ef4444; font-size: 12px; display: none; margin-top: 10px;"></p>
+    </div>
+  </div>
+
+  <!-- ALERTA DE SLA / URGÊNCIA -->
+  <div id="modal-alerta">
+    <div class="alerta-box">
+      <h2>🚨 ALERTA OPERACIONAL</h2>
+      <p id="alerta-msg">Um chamado urgente requer sua atenção!</p>
+      <button class="alerta-btn" onclick="silenciarAlarme()">RECONHECER / SILENCIAR</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-header"><span>⚡</span> Service Desk</div>
+    <ul class="sidebar-menu">
+      <li class="menu-item active" data-filter="todos">📊 Todos os Ativos</li>
+      <li class="menu-item" data-filter="urgencia-critica">🔴 Críticos</li>
+      <li class="menu-item" data-filter="estourados">⏱️ SLA Estourado</li>
+      <li class="menu-item" data-filter="SISPLAN">🟣 SISPLAN</li>
+      <li class="menu-item" data-filter="SENIOR">🔵 SENIOR</li>
+      <li class="menu-item" data-filter="SGT">🌸 SGT</li>
+      <li class="menu-item" data-filter="concluidos" style="margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">✅ Concluídos</li>
+    </ul>
+    <div class="sidebar-footer">Cockpit Enterprise • Realtime</div>
+  </aside>
+
+  <!-- PRINCIPAL -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="btn-novo-chamado" id="btn-topo-novo" onclick="abrirModalNovo()">+ Novo Chamado</button>
+      <div id="tag-espectador" class="badge-modo-leitor" style="display:none;">👀 Modo Visualizador</div>
+      
+      <div class="topbar-actions">
+        <button class="btn-header" id="btn-permissao-notif" onclick="solicitarPermissoesNavegador()">🔔 Notificações</button>
+        <button class="btn-header" onclick="abrirConfigGlpi()">⚙️ URL GLPI</button>
+        <button class="btn-header" onclick="testarSirene()">🔊 Testar Alarme</button>
+        <button class="btn-header" onclick="fazerLogout()">Sair</button>
+      </div>
+    </header>
+
+    <div class="content-body">
+      <!-- KPIS -->
+      <section class="kpi-container">
+        <div class="kpi-card kpi-green"><span class="kpi-label">Ativos</span><span class="kpi-number" id="kpi-total">0</span></div>
+        <div class="kpi-card kpi-red"><span class="kpi-label">Críticos</span><span class="kpi-number" id="kpi-criticos">0</span></div>
+        <div class="kpi-card kpi-orange"><span class="kpi-label">Alta Urgência</span><span class="kpi-number" id="kpi-altos">0</span></div>
+        <div class="kpi-card kpi-purple"><span class="kpi-label">Sistemas Terc.</span><span class="kpi-number" id="kpi-terceiros">0</span></div>
+        <div class="kpi-card kpi-gray"><span class="kpi-label">Resolvidos</span><span class="kpi-number" id="kpi-concluidos">0</span></div>
+      </section>
+
+      <!-- BUSCA -->
+      <section class="filter-bar">
+        <input type="text" id="filtro-busca" placeholder="🔍 Buscar por assunto, observação ou nº ticket..." />
+        <select id="filtro-urgencia" onchange="renderizar()">
+          <option value="todos">Todas as Urgências</option>
+          <option value="urgencia-critica">Crítica</option>
+          <option value="urgencia-alta">Alta</option>
+          <option value="urgencia-media">Média</option>
+          <option value="urgencia-baixa">Baixa</option>
+        </select>
+      </section>
+
+      <section class="tickets-grid" id="lista-chamados"></section>
+    </div>
+  </main>
+
+  <!-- MODAL: NOVO CHAMADO -->
+  <div id="modal-novo-chamado" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Cadastrar Novo Chamado</h3>
+        <button class="btn-close" onclick="fecharModalNovo()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="titulo" maxlength="90" placeholder="Título / Assunto resumido" oninput="atualizarContador('titulo', 'cont-titulo', 90)" />
+        <div class="char-counter" id="cont-titulo">0 / 90</div>
+
+        <div class="form-row">
+          <select id="urgencia">
+            <option value="urgencia-critica">🔴 Crítica (Dispara Alarme)</option>
+            <option value="urgencia-alta">🟠 Alta</option>
+            <option value="urgencia-media" selected>🟡 Média</option>
+            <option value="urgencia-baixa">🟢 Baixa</option>
+          </select>
+          <select id="sla">
+            <option value="15">SLA: 15 minutos</option>
+            <option value="30">SLA: 30 minutos</option>
+            <option value="60" selected>SLA: 1 hora</option>
+            <option value="120">SLA: 2 horas</option>
+            <option value="240">SLA: 4 horas</option>
+            <option value="480">SLA: 8 horas</option>
+            <option value="1440">SLA: 1 dia</option>
+            <option value="2880">SLA: 2 dias</option>
+            <option value="4320">SLA: 3 dias</option>
+          </select>
+        </div>
+
+        <div class="sistemas-selector">
+          <label style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; display:block;">Sistemas e Chamados</label>
+          <div class="chk-group">
+            <label class="chk-item"><input type="checkbox" id="chk-glpi" onchange="toggleInput('glpi')" checked /> GLPI</label>
+            <label class="chk-item"><input type="checkbox" id="chk-sisplan" onchange="toggleInput('sisplan')" /> SISPLAN</label>
+            <label class="chk-item"><input type="checkbox" id="chk-senior" onchange="toggleInput('senior')" /> SENIOR</label>
+            <label class="chk-item"><input type="checkbox" id="chk-sgt" onchange="toggleInput('sgt')" /> SGT</label>
+          </div>
+          <div class="dynamic-inputs">
+            <input type="text" id="ticket-glpi" maxlength="20" placeholder="Nº GLPI" />
+            <input type="text" id="ticket-sisplan" maxlength="20" placeholder="Nº SISPLAN" style="display:none;" />
+            <input type="text" id="ticket-senior" maxlength="20" placeholder="Nº SENIOR" style="display:none;" />
+            <input type="text" id="ticket-sgt" maxlength="20" placeholder="Nº SGT" style="display:none;" />
+          </div>
+        </div>
+
+        <textarea id="descricao" rows="3" maxlength="350" placeholder="Observação inicial..." oninput="atualizarContador('descricao', 'cont-desc', 350)"></textarea>
+        <div class="char-counter" id="cont-desc">0 / 350</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" onclick="fecharModalNovo()">Cancelar</button>
+        <button type="button" class="btn-submit" id="btn-submit-chamado" onclick="adicionarChamado()">Adicionar Chamado</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AJUSTAR SLA -->
+  <div id="modal-ajustar-sla" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>⏱️ Ajustar / Prorrogar SLA</h3>
+        <button class="btn-close" onclick="fecharModalSla()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="sla-modal-titulo" style="font-weight: 700; font-size: 14px; color: var(--text-dark);"></p>
+        <p id="sla-modal-atual" style="font-size: 12.5px; color: var(--text-muted);"></p>
+
+        <label style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-top: 6px;">Selecione o Novo Prazo / Ajuste:</label>
+        <select id="select-ajuste-sla">
+          <optgroup label="➕ Prorrogar Tempo (Adicionar ao SLA Atual)">
+            <option value="add_15">+ 15 minutos</option>
+            <option value="add_30">+ 30 minutos</option>
+            <option value="add_60" selected>+ 1 hora</option>
+            <option value="add_120">+ 2 horas</option>
+            <option value="add_240">+ 4 horas</option>
+            <option value="add_480">+ 8 horas</option>
+            <option value="add_1440">+ 1 dia</option>
+          </optgroup>
+          <optgroup label="🔄 Redefinir a Partir de Agora">
+            <option value="set_15">15 minutos a partir de agora</option>
+            <option value="set_30">30 minutos a partir de agora</option>
+            <option value="set_60">1 hora a partir de agora</option>
+            <option value="set_120">2 horas a partir de agora</option>
+            <option value="set_240">4 horas a partir de agora</option>
+            <option value="set_480">8 horas a partir de agora</option>
+            <option value="set_1440">1 dia a partir de agora</option>
+            <option value="set_2880">2 dias a partir de agora</option>
+            <option value="set_4320">3 dias a partir de agora</option>
+          </optgroup>
+        </select>
+
+        <input type="text" id="sla-justificativa" maxlength="100" placeholder="Motivo do ajuste (opcional)" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" onclick="fecharModalSla()">Cancelar</button>
+        <button type="button" class="btn-submit" id="btn-submit-sla" style="background:#f59e0b;" onclick="salvarNovoSla()">Salvar Novo SLA</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TRÂMITES -->
+  <div id="modal-tramites" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-tramites-titulo">Trâmites do Chamado</h3>
+        <button class="btn-close" onclick="fecharModalTramites()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="timeline-container" id="timeline-lista"></div>
+
+        <div class="novo-tramite-box" id="box-novo-tramite">
+          <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">+ Adicionar Novo Andamento</label>
+          <textarea id="tramite-texto" rows="3" maxlength="400" placeholder="Descreva a atualização..." oninput="atualizarContador('tramite-texto', 'cont-tramite', 400)"></textarea>
+          <div class="char-counter" id="cont-tramite">0 / 400</div>
+          
+          <button type="button" class="btn-submit" id="btn-salvar-tramite" style="background: #6366f1;" onclick="salvarNovoTramite()">+ Registrar Andamento</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" onclick="fecharModalTramites()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIG GLPI -->
+  <div id="modal-config-glpi" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Configurar URL Padrão do GLPI</h3>
+        <button class="btn-close" onclick="fecharConfigGlpi()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="glpi-base-url" placeholder="https://glpi.empresa.com.br/front/ticket.form.php?id=" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="fecharConfigGlpi()">Cancelar</button>
+        <button class="btn-submit" onclick="salvarConfigGlpi()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script da Aplicação Separado -->
+  <script src="app.js"></script>
+</body>
+</html>
