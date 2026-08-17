@@ -50,12 +50,18 @@ auth.onAuthStateChanged(user => {
     document.getElementById("gate-acesso").style.display = "none";
     isModoLeitor = user.isAnonymous;
     
+    const btnNovo = document.getElementById("btn-topo-novo");
+    const btnUrls = document.getElementById("btn-config-urls");
+    const tagEspectador = document.getElementById("tag-espectador");
+
     if (isModoLeitor) {
-      document.getElementById("btn-topo-novo").style.display = "none";
-      document.getElementById("tag-espectador").style.display = "block";
+      if (btnNovo) btnNovo.style.display = "none";
+      if (btnUrls) btnUrls.style.display = "none";
+      if (tagEspectador) tagEspectador.style.display = "block";
     } else {
-      document.getElementById("btn-topo-novo").style.display = "block";
-      document.getElementById("tag-espectador").style.display = "none";
+      if (btnNovo) btnNovo.style.display = "block";
+      if (btnUrls) btnUrls.style.display = "block";
+      if (tagEspectador) tagEspectador.style.display = "none";
     }
 
     iniciarSincronizacao();
@@ -159,7 +165,7 @@ function iniciarSincronizacao() {
 }
 
 // ==========================================
-// 5. OPERAÇÕES DE NEGÓCIO E LINKS
+// 5. OPERAÇÕES DE NEGÓCIO E URLs
 // ==========================================
 function atualizarContador(inputId, contadorId, limite) {
   const valor = document.getElementById(inputId).value.length;
@@ -168,13 +174,19 @@ function atualizarContador(inputId, contadorId, limite) {
 
 function obterUrlBase(sistema) {
   const key = `url_base_${sistema.toLowerCase()}`;
-  return localStorage.getItem(key) || URLS_PADRAO[sistema] || "";
+  const salva = localStorage.getItem(key);
+  if (salva !== null && salva !== "") return salva;
+  return URLS_PADRAO[sistema] || "";
 }
 
 function abrirConfigUrls() {
+  if (isModoLeitor) return;
+  
   ["glpi", "sisplan", "senior", "sgt"].forEach(sis => {
     const el = document.getElementById(`url-base-${sis}`);
-    if (el) el.value = obterUrlBase(sis.toUpperCase());
+    if (el) {
+      el.value = obterUrlBase(sis.toUpperCase());
+    }
   });
   document.getElementById("modal-config-urls").style.display = "flex";
 }
@@ -184,13 +196,17 @@ function fecharConfigUrls() {
 }
 
 function salvarConfigUrls() {
+  if (isModoLeitor) return;
+
   ["glpi", "sisplan", "senior", "sgt"].forEach(sis => {
     const el = document.getElementById(`url-base-${sis}`);
     if (el) {
       localStorage.setItem(`url_base_${sis}`, el.value.trim());
     }
   });
+
   fecharConfigUrls();
+  alert("URLs dos sistemas atualizadas com sucesso!");
   renderizar();
 }
 
@@ -546,13 +562,13 @@ function renderizar() {
     const textoBusca = `${item.titulo} ${item.descricao} ${(item.sistemas || []).map(s => s.nome + s.ticket).join(' ')} ${(item.tramites||[]).map(t => t.texto).join(' ')}`.toLowerCase();
     if (termo && !textoBusca.includes(termo)) return;
 
-    // Badges: Se for leitor anônimo, omite os números
+    // Badges: Oculta o número para leitores
     const badgesHtml = (item.sistemas || []).map(s => {
       const textoBadge = isModoLeitor ? escapeHtml(s.nome) : `${escapeHtml(s.nome)} #${escapeHtml(s.ticket||'')}`;
       return `<span class="badge-sis badge-${escapeHtml((s.nome||'').toLowerCase())}">${textoBadge}</span>`;
     }).join("");
 
-    // Links para os 4 sistemas (Exibidos exclusivamente para operadores)
+    // Links dos sistemas apenas para operadores
     let linksSistemasHtml = "";
     if (!isModoLeitor) {
       (item.sistemas || []).forEach(sis => {
