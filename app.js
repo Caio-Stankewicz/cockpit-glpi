@@ -168,15 +168,19 @@ function iniciarSincronizacao() {
 // 5. OPERAÇÕES DE NEGÓCIO E URLs
 // ==========================================
 function atualizarContador(inputId, contadorId, limite) {
-  const valor = document.getElementById(inputId).value.length;
-  document.getElementById(contadorId).textContent = `${valor} / ${limite}`;
+  const el = document.getElementById(inputId);
+  const count = document.getElementById(contadorId);
+  if (el && count) {
+    count.textContent = `${el.value.length} / ${limite}`;
+  }
 }
 
 function obterUrlBase(sistema) {
+  if (!sistema) return "";
   const key = `url_base_${sistema.toLowerCase()}`;
   const salva = localStorage.getItem(key);
   if (salva !== null && salva !== "") return salva;
-  return URLS_PADRAO[sistema] || "";
+  return URLS_PADRAO[sistema.toUpperCase()] || "";
 }
 
 function abrirConfigUrls() {
@@ -185,14 +189,17 @@ function abrirConfigUrls() {
   ["glpi", "sisplan", "senior", "sgt"].forEach(sis => {
     const el = document.getElementById(`url-base-${sis}`);
     if (el) {
-      el.value = obterUrlBase(sis.toUpperCase());
+      el.value = obterUrlBase(sis);
     }
   });
-  document.getElementById("modal-config-urls").style.display = "flex";
+
+  const modal = document.getElementById("modal-config-urls");
+  if (modal) modal.style.display = "flex";
 }
 
 function fecharConfigUrls() {
-  document.getElementById("modal-config-urls").style.display = "none";
+  const modal = document.getElementById("modal-config-urls");
+  if (modal) modal.style.display = "none";
 }
 
 function salvarConfigUrls() {
@@ -212,15 +219,21 @@ function salvarConfigUrls() {
 
 function abrirModalNovo() {
   if (isModoLeitor) return;
-  document.getElementById("modal-novo-chamado").style.display = "flex";
+  const modal = document.getElementById("modal-novo-chamado");
+  if (modal) modal.style.display = "flex";
 }
-function fecharModalNovo() { document.getElementById("modal-novo-chamado").style.display = "none"; }
+function fecharModalNovo() {
+  const modal = document.getElementById("modal-novo-chamado");
+  if (modal) modal.style.display = "none";
+}
 
 function toggleInput(sis) {
   const chk = document.getElementById(`chk-${sis}`);
   const input = document.getElementById(`ticket-${sis}`);
-  input.style.display = chk.checked ? "block" : "none";
-  if (!chk.checked) input.value = "";
+  if (chk && input) {
+    input.style.display = chk.checked ? "block" : "none";
+    if (!chk.checked) input.value = "";
+  }
 }
 
 async function adicionarChamado() {
@@ -288,7 +301,8 @@ function abrirModalSla(idDoc) {
 }
 
 function fecharModalSla() {
-  document.getElementById("modal-ajustar-sla").style.display = "none";
+  const modal = document.getElementById("modal-ajustar-sla");
+  if (modal) modal.style.display = "none";
   chamadoSelecionadoId = null;
 }
 
@@ -475,6 +489,7 @@ function checarTempo(limiteSla) {
 // ==========================================
 function renderizar() {
   const lista = document.getElementById("lista-chamados");
+  if (!lista) return;
   lista.innerHTML = "";
 
   const termo = (document.getElementById("filtro-busca")?.value || "").toLowerCase();
@@ -486,11 +501,18 @@ function renderizar() {
     if (c.urgencia === "urgencia-alta") countAltos++;
     if (Array.isArray(c.sistemas) && c.sistemas.some(s => s.nome !== "GLPI")) countTerceiros++;
   });
-  document.getElementById("kpi-total").textContent = chamadosAtivos.length;
-  document.getElementById("kpi-criticos").textContent = countCriticos;
-  document.getElementById("kpi-altos").textContent = countAltos;
-  document.getElementById("kpi-terceiros").textContent = countTerceiros;
-  document.getElementById("kpi-concluidos").textContent = chamadosConcluidos.length;
+  
+  const elTotal = document.getElementById("kpi-total");
+  const elCrit = document.getElementById("kpi-criticos");
+  const elAltos = document.getElementById("kpi-altos");
+  const elTerc = document.getElementById("kpi-terceiros");
+  const elConc = document.getElementById("kpi-concluidos");
+  
+  if (elTotal) elTotal.textContent = chamadosAtivos.length;
+  if (elCrit) elCrit.textContent = countCriticos;
+  if (elAltos) elAltos.textContent = countAltos;
+  if (elTerc) elTerc.textContent = countTerceiros;
+  if (elConc) elConc.textContent = chamadosConcluidos.length;
 
   // ABA CONCLUÍDOS
   if (filtroSidebar === "concluidos") {
@@ -655,7 +677,8 @@ function abrirModalTramites(idDoc, isHistory = false) {
 }
 
 function fecharModalTramites() {
-  document.getElementById("modal-tramites").style.display = "none";
+  const modal = document.getElementById("modal-tramites");
+  if (modal) modal.style.display = "none";
   chamadoSelecionadoId = null;
 }
 
