@@ -15,7 +15,13 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const ticketsRef = db.collection("chamados");
 
-const URL_GLPI_PADRAO = "https://glpi.empresa.com.br/front/ticket.form.php?id=";
+const URLS_PADRAO = {
+  GLPI: "https://glpi.empresa.com.br/front/ticket.form.php?id=",
+  SISPLAN: "https://sisplan.empresa.com.br/chamado?id=",
+  SENIOR: "https://senior.empresa.com.br/ticket?id=",
+  SGT: "https://sgt.empresa.com.br/solicitacao?id="
+};
+
 let isModoLeitor = false;
 let unsubscribeAtivos = null;
 let unsubscribeConcluidos = null;
@@ -153,26 +159,38 @@ function iniciarSincronizacao() {
 }
 
 // ==========================================
-// 5. OPERAÇÕES DE NEGÓCIO
+// 5. OPERAÇÕES DE NEGÓCIO E LINKS
 // ==========================================
 function atualizarContador(inputId, contadorId, limite) {
   const valor = document.getElementById(inputId).value.length;
   document.getElementById(contadorId).textContent = `${valor} / ${limite}`;
 }
 
-function obterUrlBaseGlpi() {
-  return localStorage.getItem("glpi_base_url") || URL_GLPI_PADRAO;
+function obterUrlBase(sistema) {
+  const key = `url_base_${sistema.toLowerCase()}`;
+  return localStorage.getItem(key) || URLS_PADRAO[sistema] || "";
 }
-function abrirConfigGlpi() {
-  document.getElementById("glpi-base-url").value = obterUrlBaseGlpi();
-  document.getElementById("modal-config-glpi").style.display = "flex";
+
+function abrirConfigUrls() {
+  ["glpi", "sisplan", "senior", "sgt"].forEach(sis => {
+    const el = document.getElementById(`url-base-${sis}`);
+    if (el) el.value = obterUrlBase(sis.toUpperCase());
+  });
+  document.getElementById("modal-config-urls").style.display = "flex";
 }
-function fecharConfigGlpi() { document.getElementById("modal-config-glpi").style.display = "none"; }
-function salvarConfigGlpi() {
-  let url = document.getElementById("glpi-base-url").value.trim();
-  if (!url.endsWith("id=") && !url.endsWith("/")) url += (url.includes("?") ? "&id=" : "/front/ticket.form.php?id=");
-  localStorage.setItem("glpi_base_url", url);
-  fecharConfigGlpi();
+
+function fecharConfigUrls() {
+  document.getElementById("modal-config-urls").style.display = "none";
+}
+
+function salvarConfigUrls() {
+  ["glpi", "sisplan", "senior", "sgt"].forEach(sis => {
+    const el = document.getElementById(`url-base-${sis}`);
+    if (el) {
+      localStorage.setItem(`url_base_${sis}`, el.value.trim());
+    }
+  });
+  fecharConfigUrls();
   renderizar();
 }
 
@@ -468,7 +486,11 @@ function renderizar() {
     const concluidosOrdenados = [...chamadosConcluidos].sort((a, b) => (b.finalizadoEmMs || 0) - (a.finalizadoEmMs || 0));
 
     concluidosOrdenados.forEach(item => {
-      const badgesHtml = (item.sistemas || []).map(s => `<span class="badge-sis badge-${escapeHtml((s.nome||'').toLowerCase())}">${escapeHtml(s.nome)} #${escapeHtml(s.ticket||'')}</span>`).join("");
+      const badgesHtml = (item.sistemas || []).map(s => {
+        const textoBadge = isModoLeitor ? escapeHtml(s.nome) : `${escapeHtml(s.nome)} #${escapeHtml(s.ticket||'')}`;
+        return `<span class="badge-sis badge-${escapeHtml((s.nome||'').toLowerCase())}">${textoBadge}</span>`;
+      }).join("");
+
       const card = document.createElement("div");
       card.className = "ticket-card";
       card.style.opacity = "0.88";
@@ -524,9 +546,23 @@ function renderizar() {
     const textoBusca = `${item.titulo} ${item.descricao} ${(item.sistemas || []).map(s => s.nome + s.ticket).join(' ')} ${(item.tramites||[]).map(t => t.texto).join(' ')}`.toLowerCase();
     if (termo && !textoBusca.includes(termo)) return;
 
-    const badgesHtml = (item.sistemas || []).map(s => `<span class="badge-sis badge-${escapeHtml((s.nome||'').toLowerCase())}">${escapeHtml(s.nome)} #${escapeHtml(s.ticket||'')}</span>`).join("");
-    const ticketGlpiObj = (item.sistemas || []).find(s => s.nome === "GLPI");
-    const linkGlpi = ticketGlpiObj && ticketGlpiObj.ticket ? `${obterUrlBaseGlpi()}${encodeURIComponent(ticketGlpiObj.ticket)}` : null;
+    // Badges: Se for leitor anônimo, omite os números
+    const badgesHtml = (item.sistemas || []).map(s => {
+      const textoBadge = isModoLeitor ? escapeHtml(s.nome) : `${escapeHtml(s.nome)} #${escapeHtml(s.ticket||'')}`;
+      return `<span class="badge-sis badge-${escapeHtml((s.nome||'').toLowerCase())}">${textoBadge}</span>`;
+    }).join("");
+
+    // Links para os 4 sistemas (Exibidos exclusivamente para operadores)
+    let linksSistemasHtml = "";
+    if (!isModoLeitor) {
+      (item.sistemas || []).forEach(sis => {
+        const urlBase = obterUrlBase(sis.nome);
+        if (urlBase && sis.ticket) {
+          const urlFinal = `${urlBase}${encodeURIComponent(sis.ticket)}`;
+          linksSistemasHtml += `<a href="${escapeHtml(urlFinal)}" target="_blank" class="btn-action-card btn-abrir">Abrir ${escapeHtml(sis.nome)} ↗</a>`;
+        }
+      });
+    }
 
     const card = document.createElement("div");
     card.className = `ticket-card ${escapeHtml(item.urgencia)}`;
@@ -546,7 +582,7 @@ function renderizar() {
           <button class="btn-action-card btn-tramite" data-action="tramites" data-id="${escapeHtml(item.idDoc)}">💬 Trâmites (${(item.tramites||[]).length})</button>
           ${!isModoLeitor ? `<button class="btn-action-card btn-sla" data-action="sla" data-id="${escapeHtml(item.idDoc)}" title="Ajustar ou prorrogar prazo">⏱️ SLA</button>` : ''}
           <button class="btn-action-card btn-copiar" data-action="copiar" data-id="${escapeHtml(item.idDoc)}">📋</button>
-          ${linkGlpi ? `<a href="${escapeHtml(linkGlpi)}" target="_blank" class="btn-action-card btn-abrir">Abrir ↗</a>` : ''}
+          ${linksSistemasHtml}
           ${!isModoLeitor ? `
             <button class="btn-action-card btn-fechar" data-action="concluir" data-id="${escapeHtml(item.idDoc)}">Concluir</button>
             <button class="btn-action-card btn-excluir" data-action="excluir" data-id="${escapeHtml(item.idDoc)}">🗑️</button>
@@ -611,7 +647,10 @@ function copiarResumo(idDoc, isHistory = false) {
   const item = (isHistory ? chamadosConcluidos : chamadosAtivos).find(c => c.idDoc === idDoc);
   if (!item) return;
 
-  const tags = (item.sistemas || []).map(s => `${s.nome}: #${s.ticket || ''}`).join(" | ");
+  const tags = (item.sistemas || []).map(s => {
+    return isModoLeitor ? s.nome : `${s.nome}: #${s.ticket || ''}`;
+  }).join(" | ");
+
   let texto = `📌 [${tags}]\n*Assunto:* ${item.titulo}\n*Obs Inicial:* ${item.descricao || 'Sem observações'}`;
   if (item.tramites && item.tramites.length > 0) {
     texto += `\n\n*Trâmites:*`;
